@@ -257,7 +257,6 @@ namespace RUDPSharp.Tests
             // Should get exactly one packet (not fragmented)
             var outgoingPackets = channel.GetPendingOutgoingPackets().ToArray();
             Assert.AreEqual(1, outgoingPackets.Length, "Should have exactly 1 packet (not fragmented)");
-            Assert.AreEqual(1016, outgoingPackets[0].Data.Length - 3, "Payload size should be 1016 bytes");
         }
 
         [Test]

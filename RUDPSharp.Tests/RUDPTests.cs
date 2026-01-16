@@ -103,7 +103,7 @@ namespace RUDPSharp.Tests
 
                     rUDPClient.Disconnect ();
                     serverWait.WaitOne (1000);
-                    Thread.Sleep (500);  // Give time for disconnect to propagate
+                    Thread.Sleep (1500);  // Give time for disconnect to propagate and Poll() to process
                     Assert.AreEqual (0, rUDPServer.Remotes.Count);
                     wait.WaitOne (1000);
                     Assert.AreEqual (0, rUDPClient.Remotes.Count);

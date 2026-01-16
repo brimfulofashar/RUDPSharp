@@ -8,7 +8,7 @@ namespace RUDPSharp
     {
         private class FragmentCollection
         {
-            public byte[] [] Fragments { get; set; }
+            public byte[][] Fragments { get; set; }
             public byte TotalFragments { get; set; }
             public int ReceivedCount { get; set; }
             public long LastUpdate { get; set; }
@@ -18,7 +18,7 @@ namespace RUDPSharp
         }
 
         private Dictionary<ushort, FragmentCollection> fragmentBuffers = new Dictionary<ushort, FragmentCollection>();
-        private const long FRAGMENT_TIMEOUT_TICKS = 50000000; // 5 seconds
+        private static readonly long FRAGMENT_TIMEOUT_TICKS = TimeSpan.FromSeconds(5).Ticks;
 
         public void AddFragment(Packet packet)
         {

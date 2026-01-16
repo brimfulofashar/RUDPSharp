@@ -79,7 +79,15 @@ namespace RUDPSharp
             FragmentId = fragmentId;
             FragmentIndex = fragmentIndex;
             TotalFragments = totalFragments;
-            WriteLittleEndian(rawData, FRAGMENT_ID_OFFSET, (short)fragmentId);
+            // Use BitConverter to properly handle ushort
+            byte[] fragmentIdBytes = BitConverter.GetBytes(fragmentId);
+            if (BitConverter.IsLittleEndian) {
+                rawData[FRAGMENT_ID_OFFSET] = fragmentIdBytes[0];
+                rawData[FRAGMENT_ID_OFFSET + 1] = fragmentIdBytes[1];
+            } else {
+                rawData[FRAGMENT_ID_OFFSET] = fragmentIdBytes[1];
+                rawData[FRAGMENT_ID_OFFSET + 1] = fragmentIdBytes[0];
+            }
             rawData[FRAGMENT_INDEX_OFFSET] = fragmentIndex;
             rawData[FRAGMENT_TOTAL_OFFSET] = totalFragments;
         }

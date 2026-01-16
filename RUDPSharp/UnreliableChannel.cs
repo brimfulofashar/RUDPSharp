@@ -42,8 +42,10 @@ namespace RUDPSharp
         public virtual PendingPacket QueueOutgoingPacket (EndPoint endPoint, Packet packet)
         {
             // Check if packet needs fragmentation (leaving room for headers)
-            const int FRAGMENT_OVERHEAD = 7; // header(1) + sequence(2) + fragmentId(2) + fragmentIndex(1) + totalFragments(1)
-            int maxPayloadSize = MaxBufferSize - FRAGMENT_OVERHEAD;
+            // Fragment overhead = header(1) + sequence(2) + fragmentId(2) + fragmentIndex(1) + totalFragments(1) = 7 bytes
+            const int NON_FRAGMENT_OVERHEAD = 3; // header(1) + sequence(2)
+            const int FRAGMENT_METADATA_SIZE = 4; // fragmentId(2) + fragmentIndex(1) + totalFragments(1)
+            int maxPayloadSize = MaxBufferSize - NON_FRAGMENT_OVERHEAD - FRAGMENT_METADATA_SIZE;
             
             if (packet.Payload.Length > maxPayloadSize && !packet.Fragmented)
             {

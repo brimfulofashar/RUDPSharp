@@ -55,6 +55,11 @@ namespace RUDPSharp
         }
         public override PendingPacket QueueIncomingPacket (EndPoint endPoint, Packet packet)
         {
+            // Handle fragmentation first before sequence checking
+            if (packet.Fragmented) {
+                return base.QueueIncomingPacket (endPoint, packet);
+            }
+            
             if (QueueOrDiscardPendingPackages (endPoint, PendingPacket.FromPacket (endPoint, packet))) {
                 return base.QueueIncomingPacket (endPoint, packet);
             }

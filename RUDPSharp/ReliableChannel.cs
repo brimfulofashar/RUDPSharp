@@ -19,6 +19,13 @@ namespace RUDPSharp
         }
         public override PendingPacket QueueIncomingPacket (EndPoint endPoint, Packet packet)
         {
+            // Don't process ACKs or handle acknowledgment for fragments
+            // Fragments will be handled in the base class and acknowledgment will happen
+            // after reassembly
+            if (packet.Fragmented) {
+                return base.QueueIncomingPacket (endPoint, packet);
+            }
+            
             if (!acknowledgement.HandleIncommingPacket(packet))
             {
                 QueueOutgoingPacket(endPoint, new Packet(PacketType.Ack, packet.Channel, packet.Sequence, Array.Empty<byte> ()));

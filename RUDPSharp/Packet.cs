@@ -5,15 +5,25 @@ namespace RUDPSharp
     /*
     * Packet Structure
     *
-    * byte header   PacketType|Channel|FragmetedBit
-    * byte sequence
-    * byte sequence
+    * byte header   PacketType|Channel|FragmentedBit
+    * byte sequence (low)
+    * byte sequence (high)
+    * -- If fragmented:
+    * byte fragmentId (low)
+    * byte fragmentId (high)
+    * byte fragmentIndex
+    * byte totalFragments
+    * -- End if
     * byte+ payload
     */
     public ref struct Packet {
         const int  HEADER_OFFSET = 0;
         const int  SEQUENCE_OFFSET = 1;
         const int  PAYLOAD_OFFSET = 3;
+        const int  FRAGMENT_ID_OFFSET = 3;
+        const int  FRAGMENT_INDEX_OFFSET = 5;
+        const int  FRAGMENT_TOTAL_OFFSET = 6;
+        const int  FRAGMENT_PAYLOAD_OFFSET = 7;
         byte [] rawData;
         Span<byte> span;
 
@@ -26,25 +36,52 @@ namespace RUDPSharp
             PacketType = header.type;
             Channel = header.channel;
             Fragmented = header.fragmented;
+            
+            if (Fragmented) {
+                FragmentId = BitConverter.ToUInt16(rawData, FRAGMENT_ID_OFFSET);
+                FragmentIndex = rawData[FRAGMENT_INDEX_OFFSET];
+                TotalFragments = rawData[FRAGMENT_TOTAL_OFFSET];
+            } else {
+                FragmentId = 0;
+                FragmentIndex = 0;
+                TotalFragments = 1;
+            }
         }
 
         public Packet (PacketType packetType, Channel channel, ReadOnlySpan <byte> payload, bool fragmented = false)
         {
-            byte header = EncodeHeader (packetType, channel);
-            rawData = new byte[payload.Length + PAYLOAD_OFFSET];
-            rawData[HEADER_OFFSET] = header;
+            byte header = EncodeHeader (packetType, channel, fragmented);
+            int offset = fragmented ? FRAGMENT_PAYLOAD_OFFSET : PAYLOAD_OFFSET;
+            rawData = new byte[payload.Length + offset];
             span = new Span<byte> (rawData);
-            payload.TryCopyTo (span.Slice (PAYLOAD_OFFSET));
+            rawData[HEADER_OFFSET] = header;
             PacketType = packetType;
             Channel = channel;
             Fragmented = fragmented;
+            FragmentId = 0;
+            FragmentIndex = 0;
+            TotalFragments = 1;
             Sequence = 0;
+            payload.TryCopyTo (span.Slice (offset));
         }
 
         public Packet (PacketType packetType, Channel channel, ushort sequence, ReadOnlySpan <byte> payload, bool fragmented = false)
             : this (packetType, channel, payload, fragmented: fragmented)
         {
             Sequence = sequence;
+        }
+        
+        public void SetFragmentInfo(ushort fragmentId, byte fragmentIndex, byte totalFragments)
+        {
+            if (!Fragmented) {
+                throw new InvalidOperationException("Cannot set fragment info on non-fragmented packet");
+            }
+            FragmentId = fragmentId;
+            FragmentIndex = fragmentIndex;
+            TotalFragments = totalFragments;
+            WriteLittleEndian(rawData, FRAGMENT_ID_OFFSET, (short)fragmentId);
+            rawData[FRAGMENT_INDEX_OFFSET] = fragmentIndex;
+            rawData[FRAGMENT_TOTAL_OFFSET] = totalFragments;
         }
 
         public byte Header { get { return span[HEADER_OFFSET]; }}
@@ -54,13 +91,24 @@ namespace RUDPSharp
         public Channel Channel { get; private set; }
 
         public bool Fragmented { get; private set; }
+        
+        public ushort FragmentId { get; private set; }
+        
+        public byte FragmentIndex { get; private set; }
+        
+        public byte TotalFragments { get; private set; }
 
         public ushort Sequence {
             get { return DecodeSequence (); }
             set { EncodeSequence (value);}
         }
 
-        public ReadOnlySpan<byte> Payload { get { return span.Slice (PAYLOAD_OFFSET); }}
+        public ReadOnlySpan<byte> Payload { 
+            get { 
+                int offset = Fragmented ? FRAGMENT_PAYLOAD_OFFSET : PAYLOAD_OFFSET;
+                return span.Slice (offset); 
+            }
+        }
 
         public byte[] Data { get { return rawData; }}
 
@@ -75,7 +123,7 @@ namespace RUDPSharp
             byte t = (byte)type;
             byte t1 = (byte)channel;
             byte header = (byte)(t1 << 5);
-            byte f = (byte)(fragmented ? 1 : 0 << 7); 
+            byte f = (byte)(fragmented ? 1 << 7 : 0); 
             header = (byte)(f | header | t);
             return header;
         }

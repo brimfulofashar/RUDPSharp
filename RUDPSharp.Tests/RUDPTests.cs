@@ -103,6 +103,7 @@ namespace RUDPSharp.Tests
 
                     rUDPClient.Disconnect ();
                     serverWait.WaitOne (1000);
+                    Thread.Sleep (100);  // Give Poll() loop time to remove remote after disconnect event
                     Assert.AreEqual (0, rUDPServer.Remotes.Count);
                     wait.WaitOne (1000);
                     Assert.AreEqual (0, rUDPClient.Remotes.Count);
@@ -261,10 +262,10 @@ namespace RUDPSharp.Tests
                     rnd.NextBytes (message);
                     dataReceived = null;
                     remote = null;
-                    serverWait.Reset ();
+                    wait.Reset ();  // Reset wait since client will receive the data
                     Assert.IsTrue (rUDPServer.SendToAll (Channel.None, message));
 
-                    serverWait.WaitOne (5000);
+                    wait.WaitOne (5000);  // Wait for client to receive data
 
                     Assert.AreEqual (message, dataReceived, $"({(string.Join (",", dataReceived ?? Array.Empty<byte> ()))}) != ({(string.Join (",", message))})");
                     Assert.AreEqual (rUDPServer.EndPoint, remote);

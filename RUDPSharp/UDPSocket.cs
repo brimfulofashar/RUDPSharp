@@ -11,7 +11,7 @@ namespace RUDPSharp
 public class UDPSocket : IDisposable {
         Socket socketIP4;
         Socket socketIP6;
-        const int BufferSize =  1024;
+        const int BufferSize =  8192;
         const int SioUdpConnreset = -1744830452; //SIO_UDP_CONNRESET = IOC_IN | IOC_VENDOR | 12
         const int SocketTTL = 255;
         string name;

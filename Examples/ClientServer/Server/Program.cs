@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Text;
 using System.Threading;
+using System.Threading.Channels;
 using RUDPSharp;
+using Channel = RUDPSharp.Channel;
 
 namespace Server
 {

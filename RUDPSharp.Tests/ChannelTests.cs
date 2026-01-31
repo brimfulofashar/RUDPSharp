@@ -236,5 +236,263 @@ namespace RUDPSharp.Tests
                 Assert.AreEqual (expectedSequence, packet.Sequence, $"Packet sequence should be {expectedSequence} but was {packet.Sequence}");
             }
         }
+
+        [Test]
+        public void TestFragmentationBoundaryNonFragmented()
+        {
+            // Test packet just below fragmentation threshold (1016 bytes)
+            // Should NOT be fragmented (threshold is 1017 bytes)
+            var channel = new UnreliableChannel();
+            byte[] payload = new byte[1016];
+            for (int i = 0; i < payload.Length; i++)
+            {
+                payload[i] = (byte)(i % 256);
+            }
+
+            var packet = new Packet(PacketType.Data, Channel.None, 1, payload);
+            var pendingPacket = channel.QueueOutgoingPacket(EndPoint, packet);
+
+            Assert.IsNotNull(pendingPacket);
+            
+            // Should get exactly one packet (not fragmented)
+            var outgoingPackets = channel.GetPendingOutgoingPackets().ToArray();
+            Assert.AreEqual(1, outgoingPackets.Length, "Should have exactly 1 packet (not fragmented)");
+        }
+
+        [Test]
+        public void TestFragmentationBoundaryExact()
+        {
+            // Test packet at exact fragmentation threshold (1017 bytes)
+            // Should NOT be fragmented (threshold is >1017, not >=1017)
+            var channel = new UnreliableChannel();
+            byte[] payload = new byte[1017];
+            for (int i = 0; i < payload.Length; i++)
+            {
+                payload[i] = (byte)(i % 256);
+            }
+
+            var packet = new Packet(PacketType.Data, Channel.None, 1, payload);
+            var pendingPacket = channel.QueueOutgoingPacket(EndPoint, packet);
+
+            Assert.IsNotNull(pendingPacket);
+            
+            // Should get exactly one packet (not fragmented)
+            var outgoingPackets = channel.GetPendingOutgoingPackets().ToArray();
+            Assert.AreEqual(1, outgoingPackets.Length, "Should have exactly 1 packet at boundary");
+        }
+
+        [Test]
+        public void TestFragmentationBoundaryJustAbove()
+        {
+            // Test packet just above fragmentation threshold (1018 bytes)
+            // Should be fragmented into 2 packets
+            var channel = new UnreliableChannel();
+            byte[] payload = new byte[1018];
+            for (int i = 0; i < payload.Length; i++)
+            {
+                payload[i] = (byte)(i % 256);
+            }
+
+            var packet = new Packet(PacketType.Data, Channel.None, 1, payload);
+            var pendingPacket = channel.QueueOutgoingPacket(EndPoint, packet);
+
+            Assert.IsNotNull(pendingPacket);
+            
+            // Should get exactly two fragments
+            var outgoingPackets = channel.GetPendingOutgoingPackets().ToArray();
+            Assert.AreEqual(2, outgoingPackets.Length, "Should have 2 fragments for 1018 bytes");
+        }
+
+        [Test]
+        public void TestFragmentationReassemblyBoundary()
+        {
+            // Test that fragments at boundary are correctly reassembled
+            var channel = new UnreliableChannel();
+            byte[] payload = new byte[1018];
+            for (int i = 0; i < payload.Length; i++)
+            {
+                payload[i] = (byte)(i % 256);
+            }
+
+            var outPacket = new Packet(PacketType.Data, Channel.None, 1, payload);
+            channel.QueueOutgoingPacket(EndPoint, outPacket);
+            
+            var outgoingPackets = channel.GetPendingOutgoingPackets().ToArray();
+            Assert.AreEqual(2, outgoingPackets.Length);
+
+            // Simulate receiving the fragments
+            var receiveChannel = new UnreliableChannel();
+            foreach (var fragment in outgoingPackets)
+            {
+                var receivedPacket = new Packet(fragment.Data, fragment.Data.Length);
+                receiveChannel.QueueIncomingPacket(EndPoint, receivedPacket);
+            }
+
+            // Should get one reassembled packet
+            var incomingPackets = receiveChannel.GetPendingIncomingPackets().ToArray();
+            Assert.AreEqual(1, incomingPackets.Length, "Should have 1 reassembled packet");
+            Assert.AreEqual(1018, incomingPackets[0].Data.Length, "Reassembled packet should be 1018 bytes");
+            
+            // Verify data integrity
+            for (int i = 0; i < payload.Length; i++)
+            {
+                Assert.AreEqual((byte)(i % 256), incomingPackets[0].Data[i], $"Data mismatch at index {i}");
+            }
+        }
+
+        [Test]
+        public void TestFragmentationMultipleFragments()
+        {
+            // Test packet that requires multiple fragments (2048 bytes = 3 fragments)
+            var channel = new UnreliableChannel();
+            byte[] payload = new byte[2048];
+            var rnd = new Random(12345);
+            rnd.NextBytes(payload);
+
+            var packet = new Packet(PacketType.Data, Channel.None, 1, payload);
+            channel.QueueOutgoingPacket(EndPoint, packet);
+            
+            var outgoingPackets = channel.GetPendingOutgoingPackets().ToArray();
+            // 2048 bytes / 1017 bytes per fragment = 3 fragments (1017 + 1017 + 14)
+            Assert.AreEqual(3, outgoingPackets.Length, "Should have 3 fragments for 2048 bytes");
+
+            // Simulate receiving the fragments in order
+            var receiveChannel = new UnreliableChannel();
+            foreach (var fragment in outgoingPackets)
+            {
+                var receivedPacket = new Packet(fragment.Data, fragment.Data.Length);
+                receiveChannel.QueueIncomingPacket(EndPoint, receivedPacket);
+            }
+
+            var incomingPackets = receiveChannel.GetPendingIncomingPackets().ToArray();
+            Assert.AreEqual(1, incomingPackets.Length, "Should have 1 reassembled packet");
+            Assert.AreEqual(2048, incomingPackets[0].Data.Length, "Reassembled packet should be 2048 bytes");
+            Assert.AreEqual(payload, incomingPackets[0].Data, "Reassembled data should match original");
+        }
+
+        [Test]
+        public void TestFragmentationOutOfOrderReassembly()
+        {
+            // Test that fragments received out of order are correctly reassembled
+            var channel = new UnreliableChannel();
+            byte[] payload = new byte[3000];
+            var rnd = new Random(54321);
+            rnd.NextBytes(payload);
+
+            var packet = new Packet(PacketType.Data, Channel.None, 1, payload);
+            channel.QueueOutgoingPacket(EndPoint, packet);
+            
+            var outgoingPackets = channel.GetPendingOutgoingPackets().ToArray();
+            Assert.AreEqual(3, outgoingPackets.Length, "Should have 3 fragments for 3000 bytes");
+
+            // Simulate receiving the fragments OUT OF ORDER (2, 0, 1)
+            var receiveChannel = new UnreliableChannel();
+            var receivedPacket2 = new Packet(outgoingPackets[2].Data, outgoingPackets[2].Data.Length);
+            receiveChannel.QueueIncomingPacket(EndPoint, receivedPacket2);
+
+            var receivedPacket0 = new Packet(outgoingPackets[0].Data, outgoingPackets[0].Data.Length);
+            receiveChannel.QueueIncomingPacket(EndPoint, receivedPacket0);
+
+            var receivedPacket1 = new Packet(outgoingPackets[1].Data, outgoingPackets[1].Data.Length);
+            receiveChannel.QueueIncomingPacket(EndPoint, receivedPacket1);
+
+            var incomingPackets = receiveChannel.GetPendingIncomingPackets().ToArray();
+            Assert.AreEqual(1, incomingPackets.Length, "Should have 1 reassembled packet");
+            Assert.AreEqual(3000, incomingPackets[0].Data.Length, "Reassembled packet should be 3000 bytes");
+            Assert.AreEqual(payload, incomingPackets[0].Data, "Reassembled data should match original despite out-of-order receipt");
+        }
+
+        [Test]
+        public void TestFragmentationLargePacket()
+        {
+            // Test large packet (4096 bytes = 5 fragments)
+            var channel = new UnreliableChannel();
+            byte[] payload = new byte[4096];
+            for (int i = 0; i < payload.Length; i++)
+            {
+                payload[i] = (byte)(i % 256);
+            }
+
+            var packet = new Packet(PacketType.Data, Channel.None, 1, payload);
+            channel.QueueOutgoingPacket(EndPoint, packet);
+            
+            var outgoingPackets = channel.GetPendingOutgoingPackets().ToArray();
+            // 4096 / 1017 = ~5 fragments
+            Assert.AreEqual(5, outgoingPackets.Length, "Should have 5 fragments for 4096 bytes");
+
+            // Verify reassembly
+            var receiveChannel = new UnreliableChannel();
+            foreach (var fragment in outgoingPackets)
+            {
+                var receivedPacket = new Packet(fragment.Data, fragment.Data.Length);
+                receiveChannel.QueueIncomingPacket(EndPoint, receivedPacket);
+            }
+
+            var incomingPackets = receiveChannel.GetPendingIncomingPackets().ToArray();
+            Assert.AreEqual(1, incomingPackets.Length);
+            Assert.AreEqual(4096, incomingPackets[0].Data.Length);
+            
+            for (int i = 0; i < payload.Length; i++)
+            {
+                Assert.AreEqual((byte)(i % 256), incomingPackets[0].Data[i], $"Data mismatch at index {i}");
+            }
+        }
+
+        [Test]
+        public void TestFragmentationMaxFragmentCount()
+        {
+            // Test approaching maximum fragment count (255 fragments)
+            // 255 * 1017 = 259335 bytes
+            var channel = new UnreliableChannel();
+            int payloadSize = 255 * 1017; // Exactly 255 fragments
+            byte[] payload = new byte[payloadSize];
+            
+            // Fill with pattern for verification
+            for (int i = 0; i < payload.Length; i++)
+            {
+                payload[i] = (byte)(i % 256);
+            }
+
+            var packet = new Packet(PacketType.Data, Channel.None, 1, payload);
+            var pendingPacket = channel.QueueOutgoingPacket(EndPoint, packet);
+
+            Assert.IsNotNull(pendingPacket);
+            var outgoingPackets = channel.GetPendingOutgoingPackets().ToArray();
+            Assert.AreEqual(255, outgoingPackets.Length, "Should have exactly 255 fragments");
+
+            // Verify reassembly
+            var receiveChannel = new UnreliableChannel();
+            foreach (var fragment in outgoingPackets)
+            {
+                var receivedPacket = new Packet(fragment.Data, fragment.Data.Length);
+                receiveChannel.QueueIncomingPacket(EndPoint, receivedPacket);
+            }
+
+            var incomingPackets = receiveChannel.GetPendingIncomingPackets().ToArray();
+            Assert.AreEqual(1, incomingPackets.Length);
+            Assert.AreEqual(payloadSize, incomingPackets[0].Data.Length);
+        }
+
+        [Test]
+        public void TestFragmentationExceedsMaxFragmentCount()
+        {
+            // Test that exceeding maximum fragment count throws exception
+            var channel = new UnreliableChannel();
+            int payloadSize = 256 * 1017; // Would require 256 fragments (exceeds 255 max)
+            byte[] payload = new byte[payloadSize];
+
+            bool exceptionThrown = false;
+            try
+            {
+                var packet = new Packet(PacketType.Data, Channel.None, 1, payload);
+                channel.QueueOutgoingPacket(EndPoint, packet);
+            }
+            catch (InvalidOperationException)
+            {
+                exceptionThrown = true;
+            }
+            
+            Assert.IsTrue(exceptionThrown, "Should throw InvalidOperationException when exceeding max fragment count");
+        }
     }
 }
